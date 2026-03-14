@@ -184,8 +184,18 @@ create policy "Pool creators can manage entries" on public.entries for all using
   exists (select 1 from public.pools where id = entries.pool_id and created_by = auth.uid())
 );
 create policy "Users can claim entries" on public.entries for update using (
-  exists (select 1 from public.pool_members where pool_id = entries.pool_id and user_id = auth.uid())
-) with check (user_id = auth.uid());
+  -- claiming: pool member on an unclaimed entry
+  (entries.user_id is null and exists (
+    select 1 from public.pool_members
+    where pool_id = entries.pool_id and user_id = auth.uid()
+  ))
+  or
+  -- unclaiming: current owner
+  entries.user_id = auth.uid()
+) with check (
+  user_id = auth.uid()  -- claiming: new value is yourself
+  or user_id is null    -- unclaiming: new value is null (USING ensures you're the owner)
+);
 
 -- Entry picks: viewable by pool members
 create policy "Entry picks viewable by pool members" on public.entry_picks for select using (
