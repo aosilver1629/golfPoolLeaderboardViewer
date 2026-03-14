@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
     // 6. Fetch all entries + picks in one query
     const { data: entries, error: entriesError } = await supabase
       .from("entries")
-      .select("id, entry_picks(id, golfer_name, pick_type, golfer_api_id)")
+      .select("id, pool_id, entry_name, entry_picks(id, golfer_name, pick_type, golfer_api_id)")
       .eq("pool_id", poolId);
 
     if (entriesError || !entries) {
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
       golfer_api_id: string | null;
     }[] = [];
 
-    const entryTotals: { id: string; total_points: number }[] = [];
+    const entryTotals: { id: string; pool_id: string; entry_name: string; total_points: number }[] = [];
 
     for (const entry of entries) {
       let totalPoints = 0;
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
         totalPoints += points;
       }
 
-      entryTotals.push({ id: entry.id, total_points: totalPoints });
+      entryTotals.push({ id: entry.id, pool_id: entry.pool_id, entry_name: entry.entry_name, total_points: totalPoints });
     }
 
     // 8. Bulk upsert all pick updates in one call
@@ -226,30 +226,21 @@ export async function POST(request: NextRequest) {
       throw new Error(`Failed to update picks: ${picksError.message}`);
     }
 
-    // 9. Update entry totals in parallel
-    const totalResults = await Promise.all(
-      entryTotals.map(({ id, total_points }) =>
-        supabase.from("entries").update({ total_points }).eq("id", id)
-      )
-    );
-    const totalsError = totalResults.find((r) => r.error)?.error;
-    if (totalsError) {
-      throw new Error(`Failed to update entry totals: ${totalsError.message}`);
-    }
-
-    // 10. Recalculate ranks in memory, update in parallel
+    // 9+10. Compute ranks in memory, then bulk upsert totals + ranks in one call
     entryTotals.sort((a, b) => b.total_points - a.total_points);
 
     let rank = 1;
-    const rankResults = await Promise.all(
-      entryTotals.map(({ id, total_points }, i) => {
-        if (i > 0 && total_points < entryTotals[i - 1].total_points) rank = i + 1;
-        return supabase.from("entries").update({ rank }).eq("id", id);
-      })
-    );
-    const rankError = rankResults.find((r) => r.error)?.error;
-    if (rankError) {
-      throw new Error(`Failed to update ranks: ${rankError.message}`);
+    const entryUpdates = entryTotals.map(({ id, pool_id, entry_name, total_points }, i) => {
+      if (i > 0 && total_points < entryTotals[i - 1].total_points) rank = i + 1;
+      return { id, pool_id, entry_name, total_points, rank };
+    });
+
+    const { error: entryUpsertError } = await supabase
+      .from("entries")
+      .upsert(entryUpdates, { onConflict: "id" });
+
+    if (entryUpsertError) {
+      throw new Error(`Failed to update entries: ${entryUpsertError.message}`);
     }
 
     return NextResponse.json({

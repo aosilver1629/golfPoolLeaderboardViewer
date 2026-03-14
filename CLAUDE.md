@@ -36,7 +36,7 @@ Pushing to `main` triggers an automatic Vercel redeploy.
 | Styling | Tailwind CSS |
 | Auth + DB | Supabase (email/password auth, PostgreSQL) |
 | Golf Data | Slash Golf API via RapidAPI (`live-golf-data.p.rapidapi.com`) |
-| Scheduled Sync | Vercel Cron → `/api/cron/sync` |
+| Scheduled Sync | GitHub Actions → `/api/cron/sync` |
 | Hosting | Vercel |
 | Node | 22 (see `.nvmrc`) |
 
@@ -74,7 +74,7 @@ src/
                             Fetches player list from /field or /leaderboard
       sync/route.ts         POST /api/sync { pool_id }
                             Admin-triggered leaderboard sync + points calc
-      cron/sync/route.ts    Vercel Cron-triggered sync (calls same logic)
+      cron/sync/route.ts    GitHub Actions-triggered sync (calls same logic)
   components/
     AdminPanel.tsx          Admin UI: create pool, upload entries, sync
     SpreadsheetUpload.tsx   Excel upload → golfer name mapping → DB insert
@@ -94,7 +94,7 @@ src/
   middleware.ts             Route protection
 
 supabase/schema.sql         Full DB schema + RLS policies (run in Supabase SQL editor)
-vercel.json                 Cron config: hourly Thu-Sat, every 10min Sunday, 9AM-6PM UTC
+.github/workflows/sync.yml  GitHub Actions cron: hourly Thu-Sat, every 10min Sunday, 9AM-6PM EST
 ```
 
 ---
@@ -235,14 +235,15 @@ Matching priority for each raw spreadsheet name:
 
 ---
 
-## Cron Schedule (vercel.json)
+## Cron Schedule (.github/workflows/sync.yml)
 
-```json
+```
 "0 14-23 * * 4-6"    → hourly Thu–Sat 9AM–6PM EST (UTC-5)
 "*/10 14-23 * * 0"   → every 10 min Sunday 9AM–6PM EST
 ```
 
-The cron route at `/api/cron/sync` calls all active pools' sync in sequence.
+GitHub Actions sends a GET request to `/api/cron/sync` using `secrets.APP_URL` and `secrets.CRON_SECRET`. The route calls all active pools' sync in sequence. `workflow_dispatch` allows manual triggering from the GitHub UI.
+
 Auth: `Authorization: Bearer <CRON_SECRET>` header.
 
 ---

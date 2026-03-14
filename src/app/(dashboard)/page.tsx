@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import LeaderboardTable from "@/components/LeaderboardTable";
+import LocalTimestamp from "@/components/LocalTimestamp";
 
 export const dynamic = "force-dynamic";
 
@@ -105,7 +106,7 @@ export default async function HomePage() {
           </h1>
           {lastUpdate && (
             <p className="text-sm text-slate-500 mt-1">
-              Last updated: {new Date(lastUpdate.updated_at).toLocaleString()}
+              Last updated: <LocalTimestamp isoString={lastUpdate.updated_at} />
             </p>
           )}
         </div>

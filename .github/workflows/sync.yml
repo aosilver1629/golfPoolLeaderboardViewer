@@ -12,5 +12,7 @@ jobs:
     steps:
       - name: Trigger leaderboard sync
         run: |
-          curl -f -X GET "${{ secrets.APP_URL }}/api/cron/sync" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          APP_URL="${{ secrets.APP_URL }}"
+          curl -f -X GET "${APP_URL%/}/api/cron/sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP status: %{http_code}\n"
