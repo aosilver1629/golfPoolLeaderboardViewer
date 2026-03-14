@@ -27,7 +27,7 @@ export default function JoinPoolPage() {
     const { data: pool, error: poolError } = await supabase
       .from("pools")
       .select("id, name")
-      .eq("invite_code", inviteCode.trim())
+      .eq("invite_code", inviteCode.trim().toUpperCase())
       .single();
 
     if (poolError || !pool) {

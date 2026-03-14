@@ -133,11 +133,9 @@ alter table public.points_table enable row level security;
 create policy "Profiles are viewable by everyone" on public.profiles for select using (true);
 create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
 
--- Pools: viewable by creator or members, creatable by authenticated users
-create policy "Pools viewable by members" on public.pools for select using (
-  created_by = auth.uid()
-  or exists (select 1 from public.pool_members where pool_id = pools.id and user_id = auth.uid())
-);
+-- Pools: viewable by any authenticated user (invite codes are unguessable; needed so users can look up a pool to join before they're a member)
+create policy "Authenticated users can look up any pool" on public.pools
+  for select using (auth.uid() is not null);
 create policy "Authenticated users can create pools" on public.pools for insert with check (auth.uid() = created_by);
 create policy "Pool creators can update their pools" on public.pools for update using (created_by = auth.uid());
 
