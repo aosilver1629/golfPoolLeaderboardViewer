@@ -74,6 +74,13 @@ export default async function HomePage() {
     .eq("pool_id", poolId)
     .order("total_points", { ascending: false });
 
+  // Get unclaimed entries so users can claim from the leaderboard
+  const { data: unclaimedEntries } = await supabase
+    .from("entries")
+    .select("id, entry_name")
+    .eq("pool_id", poolId)
+    .is("user_id", null);
+
   // Get the latest leaderboard update time
   const { data: lastUpdate } = await supabase
     .from("tournament_leaderboard")
@@ -123,6 +130,7 @@ export default async function HomePage() {
         poolId={poolId}
         isAdmin={profile?.is_admin || false}
         totalEntries={entries?.length || 0}
+        unclaimedEntries={unclaimedEntries || []}
       />
     </div>
   );

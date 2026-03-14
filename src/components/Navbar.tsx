@@ -39,7 +39,6 @@ export default function Navbar() {
 
   const navLinks = [
     { href: "/", label: "Leaderboard" },
-    { href: "/my-entries", label: "My Entries" },
     { href: "/join", label: "Join Pool" },
   ];
 

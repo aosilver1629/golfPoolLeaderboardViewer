@@ -17,6 +17,15 @@ npm run start    # Start production server (after build)
 
 No test suite is configured. Type-check via `npm run build` or `npx tsc --noEmit`.
 
+**After building any new feature — deploy to production:**
+```bash
+npm run build          # verify no type errors before committing
+git add .
+git commit -m "describe what changed"
+git push
+```
+Pushing to `main` triggers an automatic Vercel redeploy.
+
 ---
 
 ## Tech Stack
@@ -69,6 +78,7 @@ src/
   components/
     AdminPanel.tsx          Admin UI: create pool, upload entries, sync
     SpreadsheetUpload.tsx   Excel upload → golfer name mapping → DB insert
+    GolferMapping.tsx       Step 2 of upload: name mapping review + override UI
     LeaderboardTable.tsx    Main standings table UI
     ClaimEntry.tsx          UI for users to claim their entry
     Navbar.tsx
@@ -76,6 +86,7 @@ src/
     golf-api.ts             Slash Golf API client (fetchLeaderboard, fetchField)
     golfer-names.ts         Name matching engine (Levenshtein + aliases)
     points.ts               Points calculation with tie averaging
+    types/database.ts       Supabase DB types (untyped client used at runtime to avoid build issues)
     supabase/
       client.ts             Browser Supabase client
       server.ts             Server Supabase client + service role client
