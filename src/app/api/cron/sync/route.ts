@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ skipped: true, reason: "No active pools" });
   }
 
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin;
   const results = [];
 
   for (const pool of pools) {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin;
       const res = await fetch(`${baseUrl}/api/sync`, {
         method: "POST",
         headers: {
@@ -53,8 +53,15 @@ export async function GET(request: NextRequest) {
         body: JSON.stringify({ pool_id: pool.id }),
       });
 
-      const data = await res.json();
-      results.push({ pool_id: pool.id, ...data });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        results.push({ pool_id: pool.id, http_status: res.status, error: `Non-JSON response: ${text.slice(0, 500)}` });
+        continue;
+      }
+      results.push({ pool_id: pool.id, http_status: res.status, ...data });
     } catch (error) {
       results.push({
         pool_id: pool.id,
@@ -63,5 +70,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ results, synced_at: new Date().toISOString() });
+  return NextResponse.json({ results, synced_at: new Date().toISOString(), base_url: baseUrl });
 }
