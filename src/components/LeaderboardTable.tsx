@@ -19,7 +19,15 @@ interface Entry {
   total_points: number;
   rank: number | null;
   tiebreaker_score: number | null;
+  win_probability: number | null;
   entry_picks: EntryPick[];
+}
+
+function formatWinProb(p: number | null | undefined): string {
+  if (p === null || p === undefined) return "-";
+  const pct = p * 100;
+  if (pct < 0.1) return "<0.1%";
+  return `${pct.toFixed(1)}%`;
 }
 
 interface LeaderboardTableProps {
@@ -253,6 +261,11 @@ export default function LeaderboardTable({
                           </span>
                         </div>
                         <div className="px-3 py-3 text-center w-16 flex-shrink-0 hidden sm:block">
+                          <span className="text-sm font-semibold text-emerald-700">
+                            {formatWinProb(entry.win_probability)}
+                          </span>
+                        </div>
+                        <div className="px-3 py-3 text-center w-16 flex-shrink-0 hidden sm:block">
                           <span className="text-sm text-slate-500">{entry.tiebreaker_score || "-"}</span>
                         </div>
                         <div className="px-3 py-3 w-8 flex-shrink-0 text-slate-400 text-xs">
@@ -284,6 +297,7 @@ export default function LeaderboardTable({
           <div className="px-3 py-3 w-14 flex-shrink-0 font-medium">Rank</div>
           <div className="px-3 py-3 flex-1 font-medium min-w-0">Entry</div>
           <div className="px-3 py-3 text-right w-20 flex-shrink-0 font-medium">Points</div>
+          <div className="px-3 py-3 text-center w-16 flex-shrink-0 font-medium hidden sm:block">Win%</div>
           <div className="px-3 py-3 text-center w-16 flex-shrink-0 font-medium hidden sm:block">TB</div>
           <div className="w-8 flex-shrink-0" />
         </div>
@@ -322,6 +336,11 @@ export default function LeaderboardTable({
                     <div className="px-3 py-3 text-right w-20 flex-shrink-0">
                       <span className="text-sm font-bold text-slate-900">
                         {Math.round(entry.total_points)}
+                      </span>
+                    </div>
+                    <div className="px-3 py-3 text-center w-16 flex-shrink-0 hidden sm:block">
+                      <span className="text-sm font-semibold text-emerald-700">
+                        {formatWinProb(entry.win_probability)}
                       </span>
                     </div>
                     <div className="px-3 py-3 text-center w-16 flex-shrink-0 hidden sm:block">

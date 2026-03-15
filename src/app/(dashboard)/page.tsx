@@ -64,6 +64,7 @@ export default async function HomePage() {
       total_points,
       rank,
       tiebreaker_score,
+      win_probability,
       entry_picks (
         id,
         golfer_name,

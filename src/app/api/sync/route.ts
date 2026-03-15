@@ -3,6 +3,8 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { fetchLeaderboard, playerDisplayName, normalizeGolferName } from "@/lib/golf-api";
 import type { LeaderboardPlayer } from "@/lib/golf-api";
 import { calculateGolferPoints } from "@/lib/points";
+import { fetchWinOdds } from "@/lib/odds-api";
+import { buildWinProbMap, buildWinProbFromScores, runSimulation } from "@/lib/prediction";
 
 /** Parse position string "1", "T3" → number, "CUT"/"WD"/"DQ" → null */
 function parsePosition(pos: string): number | null {
@@ -101,8 +103,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Fetch live leaderboard from Slash Golf API
-    const apiLeaderboard: LeaderboardPlayer[] = await fetchLeaderboard(tournId, year);
+    // 1. Fetch live leaderboard + win odds in parallel
+    const [apiLeaderboard, rawOdds] = await Promise.all([
+      fetchLeaderboard(tournId, year) as Promise<LeaderboardPlayer[]>,
+      fetchWinOdds().catch(() => null),
+    ]);
 
     const now = new Date().toISOString();
 
@@ -226,7 +231,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`Failed to update picks: ${picksError.message}`);
     }
 
-    // 9+10. Compute ranks in memory, then bulk upsert totals + ranks in one call
+    // 9+10. Compute ranks in memory
     entryTotals.sort((a, b) => b.total_points - a.total_points);
 
     let rank = 1;
@@ -235,9 +240,51 @@ export async function POST(request: NextRequest) {
       return { id, pool_id, entry_name, total_points, rank };
     });
 
+    // 11. Run win-probability simulation (best-effort — failure never blocks sync)
+    // Uses betting odds when available, falls back to score-based softmax model.
+    let winProbMap: Map<string, number> | null = null;
+    try {
+      const winProbByApiId = rawOdds
+        ? buildWinProbMap(rawOdds, dbLeaderboard)
+        : buildWinProbFromScores(dbLeaderboard);
+
+      // Build resolved picks from pickUpdates (golfer_api_ids already resolved)
+      const entryPickMap = new Map<string, string[]>();
+      for (const pick of pickUpdates) {
+        if (pick.golfer_api_id) {
+          const arr = entryPickMap.get(pick.entry_id) ?? [];
+          arr.push(pick.golfer_api_id);
+          entryPickMap.set(pick.entry_id, arr);
+        }
+      }
+
+      const activePlayers = dbLeaderboard
+        .filter((g) => g.position !== null)
+        .map((g) => ({
+          golfer_api_id: g.golfer_api_id,
+          win_prob: winProbByApiId.get(g.golfer_api_id) ?? 0,
+        }))
+        .filter((p) => p.win_prob > 0);
+
+      const entriesForSim = entries.map((entry) => ({
+        entry_id: entry.id,
+        picks: entryPickMap.get(entry.id) ?? [],
+      }));
+
+      winProbMap = runSimulation(activePlayers, entriesForSim, pointsTable);
+    } catch (err) {
+      console.warn("Win probability simulation skipped:", err);
+    }
+
+    // 12. Bulk upsert totals + ranks + win_probability in one call
+    const entryUpdatesWithProbs = entryUpdates.map((e) => ({
+      ...e,
+      ...(winProbMap !== null ? { win_probability: winProbMap.get(e.id) ?? 0 } : {}),
+    }));
+
     const { error: entryUpsertError } = await supabase
       .from("entries")
-      .upsert(entryUpdates, { onConflict: "id" });
+      .upsert(entryUpdatesWithProbs, { onConflict: "id" });
 
     if (entryUpsertError) {
       throw new Error(`Failed to update entries: ${entryUpsertError.message}`);
@@ -248,6 +295,8 @@ export async function POST(request: NextRequest) {
       golfers_updated: apiLeaderboard.length,
       entries_updated: entries.length,
       picks_updated: pickUpdates.length,
+      simulation_ran: winProbMap !== null,
+      simulation_source: winProbMap !== null ? (rawOdds ? "odds" : "scores") : null,
       synced_at: now,
     });
   } catch (error) {

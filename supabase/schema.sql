@@ -79,8 +79,12 @@ create table public.entries (
   tiebreaker_score integer,
   total_points numeric default 0,
   rank integer,
+  win_probability numeric,  -- Plackett-Luce simulation result (0–1), null until first sync with ODDS_API_KEY
   created_at timestamptz default now()
 );
+
+-- Migration for existing databases:
+-- alter table public.entries add column if not exists win_probability numeric;
 
 -- Individual golfer picks per entry
 create table public.entry_picks (
