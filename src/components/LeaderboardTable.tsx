@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 interface EntryPick {
   id: string;
   golfer_name: string;
+  golfer_api_id: string | null;
   pick_type: string;
   current_position: string | null;
   current_points: number;
@@ -49,30 +50,73 @@ const pickTypeLabel: Record<string, string> = {
 
 const pickOrder = ["group_a", "group_b", "group_c", "group_d", "wildcard"];
 
-function PicksGrid({ picks }: { picks: EntryPick[] }) {
+function AboveBadge({ count }: { count: number }) {
+  if (count === 0) {
+    return (
+      <span
+        title="No entries above you share this pick — a strong separator"
+        className="text-xs font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded flex-shrink-0"
+      >
+        ↑0
+      </span>
+    );
+  }
+  const color =
+    count <= 3
+      ? "text-yellow-700 bg-yellow-100"
+      : "text-slate-500 bg-slate-100";
+  return (
+    <span
+      title={`${count} ${count === 1 ? "entry" : "entries"} above you also ${count === 1 ? "has" : "have"} this pick`}
+      className={`text-xs font-semibold ${color} px-1.5 py-0.5 rounded flex-shrink-0`}
+    >
+      ↑{count}
+    </span>
+  );
+}
+
+function PicksGrid({
+  picks,
+  aboveCountMap,
+}: {
+  picks: EntryPick[];
+  aboveCountMap?: Map<string, number>;
+}) {
   return (
     <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-3">
+      {aboveCountMap && (
+        <p className="text-xs text-slate-400 pt-3 pb-1">
+          ↑N = entries ranked above you that share this pick (lower is better for separation)
+        </p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
         {picks
           .slice()
           .sort((a, b) => pickOrder.indexOf(a.pick_type) - pickOrder.indexOf(b.pick_type))
-          .map((pick) => (
-            <div
-              key={pick.id}
-              className="flex items-center justify-between bg-white rounded-md px-3 py-2 text-sm border border-slate-200"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">
-                  {pickTypeLabel[pick.pick_type] || pick.pick_type}
-                </span>
-                <span className="text-slate-800 truncate">{pick.golfer_name}</span>
+          .map((pick) => {
+            const aboveCount =
+              aboveCountMap && pick.golfer_api_id != null
+                ? (aboveCountMap.get(pick.golfer_api_id) ?? null)
+                : null;
+            return (
+              <div
+                key={pick.id}
+                className="flex items-center justify-between bg-white rounded-md px-3 py-2 text-sm border border-slate-200"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                    {pickTypeLabel[pick.pick_type] || pick.pick_type}
+                  </span>
+                  <span className="text-slate-800 truncate">{pick.golfer_name}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                  {aboveCount !== null && <AboveBadge count={aboveCount} />}
+                  <span className="text-xs text-slate-500">{pick.current_position || "-"}</span>
+                  <span className="font-semibold text-slate-700">{pick.current_points}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                <span className="text-xs text-slate-500">{pick.current_position || "-"}</span>
-                <span className="font-semibold text-slate-700">{pick.current_points}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
       </div>
     </div>
   );
@@ -97,6 +141,30 @@ export default function LeaderboardTable({
 
   const prizePlaces = Math.floor(totalEntries / 17) || 1;
   const myEntries = entries.filter((e) => e.user_id === currentUserId);
+
+  // For each entry: map golfer_api_id → count of entries with a lower rank (i.e. ranked above)
+  // that share that pick. Entries are sorted by total_points desc (rank order).
+  const aboveCountsByEntry = useMemo(() => {
+    const result = new Map<string, Map<string, number>>();
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const entryRank = entry.rank;
+      const above = entryRank != null
+        ? entries.filter((e) => e.rank != null && e.rank < entryRank)
+        : entries.slice(0, i);
+      const countMap = new Map<string, number>();
+      for (const pick of entry.entry_picks) {
+        if (!pick.golfer_api_id) continue;
+        const apiId = pick.golfer_api_id;
+        const count = above.filter((e) =>
+          e.entry_picks.some((p) => p.golfer_api_id === apiId)
+        ).length;
+        countMap.set(apiId, count);
+      }
+      result.set(entry.id, countMap);
+    }
+    return result;
+  }, [entries]);
 
   async function handleSync() {
     setSyncing(true);
@@ -282,7 +350,12 @@ export default function LeaderboardTable({
                       {unclaiming === entry.id ? "..." : "✕"}
                     </button>
                   </div>
-                  {isExpanded && <PicksGrid picks={entry.entry_picks} />}
+                  {isExpanded && (
+                    <PicksGrid
+                      picks={entry.entry_picks}
+                      aboveCountMap={aboveCountsByEntry.get(entry.id)}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -354,7 +427,12 @@ export default function LeaderboardTable({
                   </div>
                 </button>
 
-                {isExpanded && <PicksGrid picks={entry.entry_picks} />}
+                {isExpanded && (
+                  <PicksGrid
+                    picks={entry.entry_picks}
+                    aboveCountMap={aboveCountsByEntry.get(entry.id)}
+                  />
+                )}
               </div>
             );
           })}

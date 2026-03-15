@@ -68,6 +68,7 @@ export default async function HomePage() {
       entry_picks (
         id,
         golfer_name,
+        golfer_api_id,
         pick_type,
         current_position,
         current_points

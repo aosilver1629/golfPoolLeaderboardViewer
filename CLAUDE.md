@@ -50,6 +50,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 SLASH_GOLF_API_KEY=        # RapidAPI key for live-golf-data
 CRON_SECRET=               # Shared secret for cron auth header
+ODDS_API_KEY=              # The Odds API key (optional — enables win probability simulation)
 ```
 
 `golf-api.ts` reads `process.env.RAPIDAPI_KEY || process.env.SLASH_GOLF_API_KEY` — use either name.
@@ -74,18 +75,24 @@ src/
                             Fetches player list from /field or /leaderboard
       sync/route.ts         POST /api/sync { pool_id }
                             Admin-triggered leaderboard sync + points calc
+                            Also runs win probability simulation (see below)
       cron/sync/route.ts    GitHub Actions-triggered sync (calls same logic)
+      debug-odds/route.ts   GET — debug helper to verify ODDS_API_KEY + list golf sports keys
   components/
     AdminPanel.tsx          Admin UI: create pool, upload entries, sync
     SpreadsheetUpload.tsx   Excel upload → golfer name mapping → DB insert
     GolferMapping.tsx       Step 2 of upload: name mapping review + override UI
     LeaderboardTable.tsx    Main standings table UI
     ClaimEntry.tsx          UI for users to claim their entry
+    LocalTimestamp.tsx      Client component: renders ISO string as local time
     Navbar.tsx
   lib/
-    golf-api.ts             Slash Golf API client (fetchLeaderboard, fetchField)
+    golf-api.ts             Slash Golf API client (fetchLeaderboard, fetchField, normalizeGolferName)
     golfer-names.ts         Name matching engine (Levenshtein + aliases)
     points.ts               Points calculation with tie averaging
+    odds-api.ts             The Odds API client (fetchWinOdds → Map<name, winProb>)
+    prediction.ts           Plackett-Luce Monte Carlo simulation (runSimulation, buildWinProbMap,
+                            buildWinProbFromScores) — returns entry_id → win probability
     types/database.ts       Supabase DB types (untyped client used at runtime to avoid build issues)
     supabase/
       client.ts             Browser Supabase client
@@ -193,6 +200,12 @@ POST /api/sync { pool_id }
   7. Bulk upsert all entry_picks.current_points (single call)
   8. Update entries.total_points via Promise.all (parallel, not sequential)
   9. Recalculate ranks in memory, update via Promise.all
+ 10. Win probability simulation (in parallel with steps 3-9):
+     - fetchWinOdds() ← The Odds API (optional, null if key missing or call fails)
+     - If odds available: buildWinProbMap(odds, leaderboard)
+     - Fallback: buildWinProbFromScores(leaderboard) ← softmax on score_to_par
+     - runSimulation(activePlayers, entries, pointsTable, 10000 trials)
+     - Store win probabilities (currently used for display, not yet persisted to DB)
 ```
 
 **Performance:** All DB writes are batched or parallelized — do not revert to sequential `await` loops. With 190 entries × 7 picks the sequential approach causes Vercel timeouts and local hangs.
